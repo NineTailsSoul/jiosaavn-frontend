@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saavn Fetcher - Spotify Edition</title>
+    <style>
+        :root {
+            --bg-base: #000000;
+            --bg-main: #121212;
+            --bg-player: #181818;
+            --bg-hover: #282828;
+            --text-main: #ffffff;
+            --text-sub: #b3b3b3;
+            --accent: #1db954;
+            --accent-hover: #1ed760;
+            --error: #ff4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            height: 100vh;
+            display: grid;
+            grid-template-columns: 240px 1fr;
+            grid-template-rows: 1fr 90px;
+            overflow: hidden;
+        }
+
+        /* --- SIDEBAR --- */
+        .sidebar { background-color: var(--bg-base); padding: 24px 16px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+        .sidebar h1 { font-size: 1.2rem; display: flex; align-items: center; gap: 10px; }
+        .history-section h3 { font-size: 0.85rem; color: var(--text-sub); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;}
+        .history-list { display: flex; flex-direction: column; gap: 8px; }
+        .history-item {
+            display: flex; justify-content: space-between; align-items: center; padding: 8px; border-radius: 4px;
+            cursor: pointer; color: var(--text-sub); font-size: 0.9rem; transition: all 0.2s;
+        }
+        .history-item:hover { background-color: var(--bg-hover); color: var(--text-main); }
+        .history-item span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .del-btn { background: none; border: none; color: var(--text-sub); cursor: pointer; font-size: 1.1rem; opacity: 0; transition: opacity 0.2s; }
+        .history-item:hover .del-btn { opacity: 1; }
+        .del-btn:hover { color: var(--error); }
+
+        /* --- MAIN CONTENT --- */
+        .main-content {
+            background: linear-gradient(180deg, #222 0%, var(--bg-main) 30%);
+            padding: 32px; overflow-y: auto; display: flex; flex-direction: column;
+        }
+
+        .search-bar { display: flex; gap: 12px; max-width: 600px; margin-bottom: 30px; flex-shrink: 0; }
+        .search-bar input {
+            flex: 1; padding: 14px 20px; border-radius: 30px; border: none; background-color: #242424;
+            color: white; font-size: 1rem; outline: none;
+        }
+        .search-bar input:focus { box-shadow: 0 0 0 2px white; }
+        .search-bar button {
+            padding: 0 24px; border-radius: 30px; border: none; background-color: white; color: black;
+            font-weight: bold; cursor: pointer; transition: transform 0.1s;
+        }
+        .search-bar button:hover:not(:disabled) { transform: scale(1.04); }
+        .search-bar button:disabled { background-color: var(--text-sub); cursor: not-allowed; }
+
+        /* Track List View */
+        .results-container { display: flex; flex-direction: column; gap: 4px; margin-bottom: 20px; }
+
+        .track-row {
+            display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-radius: 6px;
+            cursor: pointer; transition: background 0.2s;
+        }
+        .track-row:hover { background-color: var(--bg-hover); }
+        .track-row img { width: 50px; height: 50px; border-radius: 4px; object-fit: cover; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+
+        .track-info { flex: 1; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+        .track-info h4 { margin: 0; font-size: 1rem; color: var(--text-main); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+        .track-info p { margin: 0; font-size: 0.85rem; color: var(--text-sub); }
+        .play-stats { font-size: 0.75rem; color: var(--accent); opacity: 0.8; }
+
+        .load-more-btn {
+            align-self: center; background-color: transparent; border: 1px solid var(--text-sub); color: var(--text-main);
+            padding: 10px 24px; border-radius: 30px; cursor: pointer; font-weight: bold; margin-bottom: 40px;
+            display: none; transition: all 0.2s;
+        }
+        .load-more-btn:hover { border-color: var(--text-main); transform: scale(1.02); }
+
+        /* Lyrics View */
+        .lyrics-display {
+            background-color: #111; padding: 24px; border-radius: 8px; white-space: pre-wrap;
+            line-height: 1.6; color: var(--text-sub); font-size: 1rem; display: none; margin-bottom: 40px;
+        }
+
+        /* --- BOTTOM PLAYER --- */
+        .bottom-player {
+            grid-column: 1 / 3; background-color: var(--bg-player); border-top: 1px solid #282828;
+            padding: 0 16px; display: flex; align-items: center; justify-content: space-between; z-index: 10;
+        }
+
+        .now-playing { display: flex; align-items: center; gap: 14px; width: 30%; }
+        .now-playing img { width: 56px; height: 56px; border-radius: 4px; display: none; object-fit: cover;}
+        .player-details { display: flex; flex-direction: column; overflow: hidden; }
+        .player-details h4 { font-size: 0.9rem; color: var(--text-main); font-weight: normal; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+        .player-details p { font-size: 0.75rem; color: var(--text-sub); }
+
+        .audio-controls { width: 40%; display: flex; justify-content: center; align-items: center; }
+        audio { width: 100%; height: 40px; outline: none; }
+
+        .player-actions { width: 30%; display: flex; justify-content: flex-end; }
+        .lyrics-toggle {
+            background: transparent; color: var(--text-sub); border: 1px solid var(--text-sub);
+            padding: 6px 12px; border-radius: 16px; cursor: pointer; font-size: 0.8rem; transition: all 0.2s;
+        }
+        .lyrics-toggle:hover:not(:disabled) { color: var(--text-main); border-color: var(--text-main); }
+        .lyrics-toggle:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background-color: #444; border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background-color: #666; }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <h1>🎵 Web Fetcher</h1>
+        <div class="history-section">
+            <h3>Your Searches</h3>
+            <div class="history-list" id="historyBox"></div>
+        </div>
+    </aside>
+
+    <main class="main-content" id="mainContent">
+        <div class="search-bar">
+            <input type="text" id="songInput" placeholder="What do you want to listen to?" onkeypress="handleEnter(event)">
+            <button id="searchBtn" onclick="initSearch()">Search</button>
+        </div>
+
+        <div class="lyrics-display" id="lyricsBox"></div>
+        <div class="results-container" id="resultsContainer"></div>
+        <button class="load-more-btn" id="loadMoreBtn" onclick="loadMore()">Load Next 20 Songs</button>
+    </main>
+
+    <footer class="bottom-player">
+        <div class="now-playing">
+            <img id="playerCover" src="" alt="Cover">
+            <div class="player-details">
+                <h4 id="playerTitle"></h4>
+                <p id="playerArtist"></p>
+            </div>
+        </div>
+
+        <div class="audio-controls">
+            <audio id="audioPlayer" controls autoplay></audio>
+        </div>
+
+        <div class="player-actions">
+            <button class="lyrics-toggle" id="lyricsBtn" onclick="toggleLyrics()" disabled>Lyrics</button>
+        </div>
+    </footer>
+
+    <script>
+        const API_BASE = "https://jiosaavn-api-esp-project.onrender.com";
+        let currentSongId = null;
+        let currentPage = 1;
+        let currentSearchQuery = '';
+        let history = JSON.parse(localStorage.getItem('saavnHistory')) || [];
+
+        renderHistory();
+
+        function handleEnter(e) { if (e.key === 'Enter') initSearch(); }
+
+        function formatQuery(input) {
+            return encodeURIComponent(input.replace(/[^\w\s]/gi, ' ').replace(/\s+/g, ' ').trim());
+        }
+
+        // --- NEW: Smart Official Sorting Algorithm ---
+        function sortForOfficial(results, rawQuery) {
+            const queryLower = rawQuery.toLowerCase();
+            // Junk words we want to demote
+            const junkWords = ['remix', 'cover', 'mashup', 'lofi', 'slowed', 'reverb', 'sped up', 'instrumental', 'karaoke', 'acoustic', 'mix', '8d', 'dj'];
+
+            // Only demote words the user DIDN'T search for
+            const activeFilters = junkWords.filter(word => !queryLower.includes(word));
+
+            return results.sort((a, b) => {
+                const nameA = a.name.toLowerCase();
+                const nameB = b.name.toLowerCase();
+
+                // 1. Check for Junk Words
+                const aIsJunk = activeFilters.some(word => nameA.includes(word));
+                const bIsJunk = activeFilters.some(word => nameB.includes(word));
+
+                // Push junk tracks to the bottom
+                if (aIsJunk && !bIsJunk) return 1;
+                if (!aIsJunk && bIsJunk) return -1;
+
+                // 2. Sort by Play Count (Highest to Lowest)
+                // Official songs have massive play counts. Fakes do not.
+                const playsA = parseInt(a.playCount) || 0;
+                const playsB = parseInt(b.playCount) || 0;
+
+                if (playsA !== playsB) {
+                    return playsB - playsA;
+                }
+
+                return 0; // Fallback to API default if everything is identical
+            });
+        }
+
+        // --- Loading State ---
+        let loadInterval;
+        function setButtonState(btn, isLoading) {
+            if (isLoading) {
+                btn.disabled = true;
+                const startTime = Date.now();
+                btn.innerText = `Fetching...`;
+                loadInterval = setInterval(() => {
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    btn.innerText = elapsed > 2.0 ? `Waking Server... ${elapsed}s` : `Fetching... ${elapsed}s`;
+                }, 100);
+            } else {
+                clearInterval(loadInterval);
+                btn.disabled = false;
+                btn.innerText = "Search";
+            }
+        }
+
+        // --- Search & Pagination Logic ---
+        function initSearch(queryOverride = null) {
+            const rawInput = queryOverride || document.getElementById('songInput').value;
+            if (!rawInput) return;
+
+            document.getElementById('songInput').value = rawInput;
+            currentSearchQuery = rawInput;
+            currentPage = 1;
+
+            // Clear old results
+            document.getElementById('resultsContainer').innerHTML = '';
+            document.getElementById('lyricsBox').style.display = 'none';
+
+            fetchSongsPage();
+            addToHistory(rawInput);
+        }
+
+        function loadMore() {
+            currentPage++;
+            const loadBtn = document.getElementById('loadMoreBtn');
+            loadBtn.innerText = "Loading...";
+            fetchSongsPage().finally(() => { loadBtn.innerText = "Load Next 20 Songs"; });
+        }
+
+        async function fetchSongsPage() {
+            const searchBtn = document.getElementById('searchBtn');
+            if (currentPage === 1) setButtonState(searchBtn, true);
+
+            try {
+                const safeQuery = formatQuery(currentSearchQuery);
+                const response = await fetch(`${API_BASE}/api/search/songs?query=${safeQuery}&page=${currentPage}&limit=20`);
+                if (!response.ok) throw new Error("Network error");
+
+                const json = await response.json();
+
+                if (json.success && json.data.results.length > 0) {
+
+                    // SMART SORT APPLIED HERE
+                    const sortedResults = sortForOfficial(json.data.results, currentSearchQuery);
+
+                    renderResults(sortedResults);
+                    document.getElementById('loadMoreBtn').style.display = 'block';
+                } else {
+                    if (currentPage === 1) alert("No songs found.");
+                    document.getElementById('loadMoreBtn').style.display = 'none';
+                }
+            } catch (error) {
+                console.error(error);
+                alert(`Failed to fetch. Render server might be asleep.\nError: ${error.message}`);
+            } finally {
+                if (currentPage === 1) setButtonState(searchBtn, false);
+            }
+        }
+
+        // --- Render List & Play ---
+        function formatPlays(num) {
+            if (!num) return "";
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + "M plays";
+            if (num >= 1000) return (num / 1000).toFixed(1) + "K plays";
+            return num + " plays";
+        }
+
+        function renderResults(results) {
+            const container = document.getElementById('resultsContainer');
+
+            results.forEach(track => {
+                const imgUrl = track.image.find(img => img.quality === '150x150')?.url || track.image[0].url;
+                const artist = track.artists.primary[0]?.name || "Unknown Artist";
+
+                // Format play count for UI visibility
+                const plays = formatPlays(parseInt(track.playCount));
+
+                const row = document.createElement('div');
+                row.className = 'track-row';
+                row.innerHTML = `
+                    <img src="${imgUrl}" loading="lazy" alt="Cover">
+                    <div class="track-info">
+                        <h4>${track.name}</h4>
+                        <p>${artist}</p>
+                    </div>
+                    <div class="play-stats">${plays}</div>
+                `;
+
+                row.onclick = () => playTrack(track);
+                container.appendChild(row);
+            });
+        }
+
+        function playTrack(track) {
+            currentSongId = track.id;
+
+            const hiResImage = track.image.find(img => img.quality === '500x500')?.url || track.image[0].url;
+            const hqAudio = track.downloadUrl.find(audio => audio.quality === '320kbps')?.url || track.downloadUrl[0].url;
+            const artist = track.artists.primary[0]?.name || "Unknown Artist";
+
+            document.getElementById('playerCover').src = hiResImage;
+            document.getElementById('playerCover').style.display = 'block';
+            document.getElementById('playerTitle').innerText = track.name;
+            document.getElementById('playerArtist').innerText = artist;
+            document.getElementById('audioPlayer').src = hqAudio;
+
+            const lyricsBtn = document.getElementById('lyricsBtn');
+            lyricsBtn.innerText = "Lyrics";
+            lyricsBtn.disabled = !track.hasLyrics;
+            document.getElementById('lyricsBox').style.display = 'none';
+            document.getElementById('lyricsBox').innerText = '';
+        }
+
+        // --- Lyrics ---
+        async function toggleLyrics() {
+            const box = document.getElementById('lyricsBox');
+            const btn = document.getElementById('lyricsBtn');
+
+            if (box.style.display === 'block') {
+                box.style.display = 'none';
+                btn.innerText = "Lyrics";
+                return;
+            }
+
+            if (!box.innerText && currentSongId) {
+                btn.innerText = "Loading...";
+                try {
+                    const response = await fetch(`${API_BASE}/api/songs/${currentSongId}/lyrics`);
+                    const json = await response.json();
+
+                    if (json.success && json.data.lyrics) {
+                        box.innerHTML = json.data.lyrics;
+                        document.getElementById('mainContent').scrollTop = 0;
+                    } else {
+                        box.innerText = "Could not load lyrics.";
+                    }
+                } catch (e) {
+                    box.innerText = "Error fetching lyrics.";
+                } finally {
+                    btn.innerText = "Hide Lyrics";
+                }
+            } else {
+                box.style.display = 'block';
+                btn.innerText = "Hide Lyrics";
+            }
+        }
+
+        // --- History / Sidebar ---
+        function addToHistory(query) {
+            query = query.trim();
+            history = history.filter(item => item.toLowerCase() !== query.toLowerCase());
+            history.unshift(query);
+            if (history.length > 20) history.pop();
+            localStorage.setItem('saavnHistory', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function removeHistory(index, event) {
+            event.stopPropagation();
+            history.splice(index, 1);
+            localStorage.setItem('saavnHistory', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const container = document.getElementById('historyBox');
+            container.innerHTML = '';
+
+            history.forEach((query, index) => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+
+                const text = document.createElement('span');
+                text.innerText = query;
+                text.onclick = () => initSearch(query);
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'del-btn';
+                delBtn.innerHTML = '×';
+                delBtn.onclick = (e) => removeHistory(index, e);
+
+                item.appendChild(text);
+                item.appendChild(delBtn);
+                container.appendChild(item);
+            });
+        }
+    </script>
+</body>
+</html>
